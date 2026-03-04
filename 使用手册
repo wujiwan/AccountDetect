@@ -1,0 +1,421 @@
+## 一、概述
+
+本系统（https://datarisk8.com/）提供多平台账号风控检测能力，支持 **Facebook**、**Instagram**、**WhatsApp** 、**reddit**等多个平台，各平台下有不同的检测类型。请求统一通过检测接口提交，按「平台 + 检测类型」执行对应逻辑。
+
+---
+
+## 二、通用接口说明
+
+### 2.1 请求方式与地址
+
+- **方法**: `POST`
+- **路径**: `/api/v1/detect`
+- **Content-Type**: `application/json`
+
+### 2.2 通用请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| platform | string | 是 | 平台：`facebook` / `instagram` / `whatsapp` |
+| check_type | string | 是 | 检测类型，见各平台章节 |
+| phone_numbers | string[] | 是 | 待检测列表（手机号【**一定要加国家代码**】/邮箱/UID/CK/账号等，依检测类型而定） |
+| card_key | string | 是 | 卡密，用于鉴权与扣费 |
+| use_proxy | boolean | 否 | 是否启用代理，默认 `true` |
+| generate_report | boolean | 否 | 是否生成报告，默认 `false` |
+
+### 2.3 通用响应结构
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| success | boolean | 请求是否成功 |
+| message | string | 提示信息，如「检测完成」 |
+| data | array | 检测结果列表，每项见下方「单条结果」 |
+| statistics | object | 统计信息 |
+
+**单条结果 (data[i])**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| phone | string | 提交的原始标识（手机号/邮箱/UID/CK/用户名等） |
+| status | string | `success` 成功 / `failed` 失败 |
+| is_new | boolean | 是否新号（部分检测类型有） |
+| is_blocked | int | 0 未检测，1 风控/冻结/无效，2 正常/有效（部分类型有） |
+| reg_date | string | 注册时间（仅 UID 类检测有） |
+| error_msg | string | 失败时的错误信息 |
+| details | object | 扩展详情，依检测类型不同 |
+
+**统计信息 (statistics)**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| total_phones | int | 总条数 |
+| new_phones | int | 新号数 |
+| old_phones | int | 老号数 |
+| failed_phones | int | 失败数 |
+| pending_phones | int | 待处理数 |
+| total_time | float | 总耗时（秒） |
+| success_rate | float | 成功率（%） |
+| completion_time | string | 完成时间 |
+
+---
+
+## 三、Facebook 平台
+
+### 3.1 风控检测 (risk)
+
+**功能**：检测手机号/邮箱是否注册、是否被冻结。
+
+**输入要求**：
+
+- 每行一个手机号或邮箱。
+- 单次最多 100 个账号批量检测。
+- 示例：`8613800138000`、`xxx@gmail.com`
+
+**API 示例**
+
+```json
+POST /api/v1/detect
+{
+  "platform": "facebook",
+  "check_type": "risk",
+  "phone_numbers": ["8613800138000", "user@gmail.com"],
+  "card_key": "your-card-key",
+  "use_proxy": true,
+  "generate_report": false
+}
+```
+
+**返回值示例**
+
+```json
+{
+  "success": true,
+  "message": "检测完成",
+  "data": [
+    {
+      "phone": "8613800138000",
+      "is_new": false,
+      "is_blocked": 2,
+      "reg_date": "",
+      "status": "success",
+      "error_msg": "",
+      "details": {}
+    }
+  ],
+  "statistics": {
+    "total_phones": 1,
+    "new_phones": 0,
+    "old_phones": 1,
+    "failed_phones": 0,
+    "pending_phones": 0,
+    "total_time": 2.5,
+    "success_rate": 100.0,
+    "completion_time": "2026-02-27 12:00:00"
+  }
+}
+```
+
+---
+
+### 3.2 UID 检测 (uid)
+
+**功能**：根据 Facebook UID 检测注册时间和账号状态。
+
+**输入要求**：
+
+- 每行一个 UID。
+- 单次最多 100 个 UID 批量检测。
+- 示例：`61571169000001`
+
+**API 示例**
+
+```json
+POST /api/v1/detect
+{
+  "platform": "facebook",
+  "check_type": "uid",
+  "phone_numbers": ["61571169000001"],
+  "card_key": "your-card-key"
+}
+```
+
+**返回值示例**
+
+```json
+{
+  "success": true,
+  "message": "检测完成",
+  "data": [
+    {
+      "phone": "61571169000001",
+      "is_new": false,
+      "is_blocked": 2,
+      "reg_date": "2020-05-01",
+      "status": "success",
+      "error_msg": "",
+      "details": {}
+    }
+  ],
+  "statistics": {
+    "total_phones": 1,
+    "new_phones": 0,
+    "old_phones": 1,
+    "failed_phones": 0,
+    "success_rate": 100.0
+  }
+}
+```
+
+---
+
+### 3.3 CK 存活检测 (ck)
+
+**功能**：检测 Cookie 是否有效。
+
+**输入要求**：
+
+- 每行一个 CK 字符串。
+- 单次最多 100 个批量检测。
+- 示例：`c_user=61571169000001; xs=xxxxxxxxx`
+
+**API 示例**
+
+```json
+POST /api/v1/detect
+{
+  "platform": "facebook",
+  "check_type": "ck",
+  "phone_numbers": ["c_user=61571169000001; xs=xxxxxxxxx"],
+  "card_key": "your-card-key"
+}
+```
+
+**返回值说明**：`is_blocked` 在此类型下表示 CK 是否有效——`2` 有效，`1` 无效；`is_new`、`reg_date` 在此类型下无意义。
+
+**返回值示例**
+
+```json
+{
+  "success": true,
+  "message": "检测完成",
+  "data": [
+    {
+      "phone": "c_user=61571169000001; xs=xxxxxxxxx",
+      "is_new": false,
+      "is_blocked": 2,
+      "reg_date": "",
+      "status": "success",
+      "error_msg": "",
+      "details": {}
+    }
+  ],
+  "statistics": { "total_phones": 1, "success_rate": 100.0 }
+}
+```
+
+---
+
+## 四、Instagram 平台
+
+### 4.1 新老号检测 (isnew)
+
+**功能**：检测账号是否为新号或老号。
+
+**输入要求**：
+
+- 每行一个手机号或邮箱或用户名。
+- 单次最多 100 个账号批量检测。
+
+**API 示例**
+
+```json
+POST /api/v1/detect
+{
+  "platform": "instagram",
+  "check_type": "isnew",
+  "phone_numbers": ["username_or_phone_1", "username_or_phone_2"],
+  "card_key": "your-card-key"
+}
+```
+
+**返回值示例**
+
+```json
+{
+  "success": true,
+  "message": "检测完成",
+  "data": [
+    {
+      "phone": "username_or_phone_1",
+      "is_new": true,
+      "is_blocked": 0,
+      "reg_date": "",
+      "status": "success",
+      "error_msg": "",
+      "details": {}
+    }
+  ],
+  "statistics": {
+    "total_phones": 2,
+    "new_phones": 1,
+    "old_phones": 1,
+    "failed_phones": 0,
+    "success_rate": 100.0
+  }
+}
+```
+
+---
+
+### 4.2 风控检测 (risk)
+
+**功能**：基于用户名的账号信息查询及风控状态检测。
+
+**输入要求**：
+
+- 每行一个用户名。
+- 单次最多 100 个账号批量检测。
+
+**API 示例**
+
+```json
+POST /api/v1/detect
+{
+  "platform": "instagram",
+  "check_type": "risk",
+  "phone_numbers": ["instagram_username_1"],
+  "card_key": "your-card-key"
+}
+```
+
+**返回值示例**
+
+```json
+{
+  "success": true,
+  "message": "检测完成",
+  "data": [
+    {
+      "phone": "instagram_username_1",
+      "is_new": false,
+      "is_blocked": 2,
+      "reg_date": "",
+      "status": "success",
+      "error_msg": "",
+      "details": {}
+    }
+  ],
+  "statistics": { "total_phones": 1, "success_rate": 100.0 }
+}
+```
+
+---
+
+### 4.3 CK 提取 (extract_cookies)
+
+**功能**：登录账号并提取 Cookie。
+
+**输入要求**：
+
+- 每行格式：`用户名;密码;2fa_code(如有)`（注意分隔符为分号）。
+- 支持批量提取,单次最多 30 个账号提取。
+
+**API 示例**
+
+```json
+POST /api/v1/detect
+{
+  "platform": "instagram",
+  "check_type": "extract_cookies",
+  "phone_numbers": ["username1;pwd1", "username2;pwd2;3279"],
+  "card_key": "your-card-key"
+}
+```
+
+**返回值说明**：成功时 Cookie 或会话信息通常在 `details` 中；失败时 `error_msg` 会给出原因（如账号密码错误、触发安全验证等）。
+
+**返回值示例**
+
+```json
+{
+  "success": true,
+  "message": "检测完成",
+  "data": [
+    {
+      "phone": "username1",
+      "is_new": true,
+      "is_blocked": 0,
+      "reg_date": "",
+      "status": "success",
+      "error_msg": "",
+      "details": { "response": "session_string_or_cookie..." }
+    }
+  ],
+  "statistics": { "total_phones": 1, "success_rate": 100.0 }
+}
+```
+
+---
+
+## 五、WhatsApp 平台
+
+### 5.1 新老号检测 (isnew)
+
+**功能**：检测手机号对应账号是否为新号或老号。
+
+**输入要求**：
+
+- 每行一个手机号。
+- 单次最多 100 个账号检测。
+
+**API 示例**
+
+```json
+POST /api/v1/detect
+{
+  "platform": "whatsapp",
+  "check_type": "isnew",
+  "phone_numbers": ["8613800138000"],
+  "card_key": "your-card-key"
+}
+```
+
+**返回值示例**
+
+```json
+{
+  "success": true,
+  "message": "检测完成",
+  "data": [
+    {
+      "phone": "8613800138000",
+      "is_new": false,
+      "is_blocked": 0,
+      "reg_date": "",
+      "status": "success",
+      "error_msg": "",
+      "details": {}
+    }
+  ],
+  "statistics": {
+    "total_phones": 1,
+    "new_phones": 0,
+    "old_phones": 1,
+    "failed_phones": 0,
+    "success_rate": 100.0
+  }
+}
+```
+---
+## 六、Reddit 平台
+
+### 6.1 冻结检测 (isblock)
+
+---
+
+## 七、错误与限制
+
+- **400**：参数错误（如手机号列表为空、平台/检测类型不支持、卡密无效或余额不足等），响应体中的 `detail` 会说明原因。
+- **401**：卡密未提供或无效，前端会跳转登录。
+- **500**：服务内部错误，响应体中的 `detail` 会包含简要错误信息。
+- 单次请求的 `phone_numbers` 数量不得超过系统配置上限（如 100），否则返回 400。
